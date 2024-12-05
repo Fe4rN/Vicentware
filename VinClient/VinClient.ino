@@ -24,8 +24,10 @@ struct {
   int threshold = 10; //Filtro de ruido
 } sensorProximidad;
 
-// Variable para almacenar el ID de la tarjeta
-int tarjeta_detectada;
+MFRC522 mfrc522(SS_PIN, RST_PIN);  // Crear instancia del MFRC522
+int tarjeta_detectada; // Variable para almacenar el ID de la tarjeta
+char texto[100]; // UID de la tarjeta
+
 
 void setup() {
   M5.begin();
@@ -52,7 +54,6 @@ void setup() {
     if (WiFi.waitForConnectResult() != WL_CONNECTED) {
       M5.Lcd.println("Error al conectar a la WiFi");
       M5.Lcd.println("Reintentando...");
-      }
     } else { isNotConnected = false; }
   }
   Serial.println("Conexión WiFi establecida");
@@ -61,12 +62,8 @@ void setup() {
 }
 
 void loop() {
-  
   analizarDistancia();
   analizarTarjeta();
-  char texto[100]; // Increased size to accommodate both distance and UID
-  sprintf(texto, "Distance: %d", distance); // Start with distance
-
   
   delay(1000);
 }
@@ -83,7 +80,7 @@ void analizarDistancia(){
   sensorProximidad.duration = pulseIn(ECHOPIN, HIGH);
 
   // Calcular la distancia en cm
-  sensorProximidad.distance = duration * 0.034 / 2;
+  sensorProximidad.distance = sensorProximidad.duration * 0.034 / 2;
 
   // Mostrar la distancia en el monitor serial y en la pantalla del M5Stack
   Serial.print("Distance: ");
@@ -98,7 +95,7 @@ void analizarDistancia(){
   M5.Lcd.println(" cm");
 
   // Detectar cambios de distancia para determinar movimiento
-  if (abs(distance - previousDistance) > threshold) {
+  if (abs(sensorProximidad.distance - sensorProximidad.previousDistance) > sensorProximidad.threshold) {
     M5.Lcd.setCursor(0, 20);
     M5.Lcd.println("Movimiento detectado!");
   }
@@ -108,7 +105,7 @@ void analizarDistancia(){
 }
 
 void analizarTarjeta(){
-  tarjeta_detectada = mfr  c522.PICC_IsNewCardPresent();
+  tarjeta_detectada = mfrc522.PICC_IsNewCardPresent();
   if (tarjeta_detectada) {
     if (mfrc522.PICC_ReadCardSerial()) {
       strcat(texto, ", UID: "); // Append UID to the message

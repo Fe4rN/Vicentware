@@ -11,6 +11,11 @@
 #define RST_PIN 22 // Pin RST
 #define SS_PIN 21 //Pin SDA
 
+#define LUM_PIN 36
+#define MAX_VALUE 4095
+
+#define MQ_PIN 35
+
 // Declaración de credenciales WiFi
 #define SSID "UDPserver"
 #define PASSWORD "12345678"
@@ -43,20 +48,22 @@ void setup() {
   MFRC522 mfrc522(SS_PIN, RST_PIN);
   void printArray(byte* buffer, byte bufferSize); 
 
+  pinMode(LUM_PIN, INPUT);
+
   // Iniciar pantalla del M5Stack (opcional para visualización)
   M5.Lcd.setTextSize(2);
   M5.Lcd.setCursor(0, 0);
 
   // Inicialización y conexión WiFi
-  WiFi.mode(WIFI_STA);
-  while (isNotConnected) {
-    WiFi.begin(SSID, PASSWORD);
-    if (WiFi.waitForConnectResult() != WL_CONNECTED) {
-      M5.Lcd.println("Error al conectar a la WiFi");
-      M5.Lcd.println("Reintentando...");
-    } else { isNotConnected = false; }
-  }
-  Serial.println("Conexión WiFi establecida");
+  // WiFi.mode(WIFI_STA);
+  // while (isNotConnected) {
+  //   WiFi.begin(SSID, PASSWORD);
+  //   if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+  //     M5.Lcd.println("Error al conectar a la WiFi");
+  //     M5.Lcd.println("Reintentando...");
+  //   } else { isNotConnected = false; }
+  // }
+  // Serial.println("Conexión WiFi establecida");
   delay(2000);
   Serial.println(F("Setup Finalizado"));
 }
@@ -64,7 +71,8 @@ void setup() {
 void loop() {
   analizarDistancia();
   analizarTarjeta();
-  
+  analizarLuminosidad();
+  analizarGas();
   delay(1000);
 }
 
@@ -104,24 +112,46 @@ void analizarDistancia(){
   sensorProximidad.previousDistance = sensorProximidad.distance;
 }
 
-void analizarTarjeta(){
+void analizarTarjeta() {
   tarjeta_detectada = mfrc522.PICC_IsNewCardPresent();
   if (tarjeta_detectada) {
     if (mfrc522.PICC_ReadCardSerial()) {
-      strcat(texto, ", UID: "); // Append UID to the message
+      char uidString[30] = "UID: "; // Buffer to hold the full UID string
 
       for (byte i = 0; i < mfrc522.uid.size; i++) {
         char uidByte[4]; // Buffer to hold each byte as a string
         sprintf(uidByte, "%02X", mfrc522.uid.uidByte[i]); // Format as 2-digit hex
-        strcat(texto, uidByte); // Append to the message
-        
+        strcat(uidString, uidByte); // Append to the UID string
+
         if (i < mfrc522.uid.size - 1) {
-          strcat(texto, " "); // Add a space between bytes
+          strcat(uidString, " "); // Add a space between bytes
         }
       }
+
+      M5.Lcd.println(uidString);
+
       mfrc522.PICC_HaltA();
     }
   }
+}
+
+void analizarLuminosidad() {
+  int value;
+  value = analogRead(LUM_PIN);
+  float lightPercentage = (value / (float)MAX_VALUE) * 100;
+  M5.Lcd.print("Luminosidad: ");
+  M5.Lcd.print(lightPercentage);
+  M5.Lcd.println("%");
+}
+
+void analizarGas() {
+  int raw_adc = analogRead(MQ_PIN);
+  float value_adc = raw_adc * (5.0 / 1023.0);
+
+  M5.Lcd.print("Raw:");
+  M5.Lcd.print(raw_adc);
+  M5.Lcd.print("    Tension:");
+  M5.Lcd.println(value_adc);
 }
 
 void printArray(byte *buffer, byte bufferSize) {

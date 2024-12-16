@@ -14,7 +14,10 @@
 #define LUM_PIN 36
 #define MAX_VALUE 4095
 
+//Sensor Gas
 #define MQ_PIN 35
+#define V1 1.5 // Tensión de referencia medida
+#define gasMax 0.005
 
 // Declaración de credenciales WiFi
 #define SSID "UDPserver"
@@ -33,6 +36,14 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);  // Crear instancia del MFRC522
 int tarjeta_detectada; // Variable para almacenar el ID de la tarjeta
 char texto[100]; // UID de la tarjeta
 
+struct {
+  double valProx;
+  array[] valTarj;
+  double valLum;
+  double valGas;
+} carrier
+
+//hola burrocódigo
 
 void setup() {
   M5.begin();
@@ -145,18 +156,17 @@ void analizarLuminosidad() {
 }
 
 void analizarGas() {
-  int raw_adc = analogRead(MQ_PIN);
-  float value_adc = raw_adc * (5.0 / 1023.0);
+  float valorGas;
+  float porcentajeGas;
+  valorGas = (float(analogRead(MQ_PIN)) / 4095.0) * 3.3; // Convertir a voltios
+  porcentajeGas = (valorGas/gasMax)*100;
 
-  M5.Lcd.print("Raw:");
-  M5.Lcd.print(raw_adc);
-  M5.Lcd.print("    Tension:");
-  M5.Lcd.println(value_adc);
-}
-
-void printArray(byte *buffer, byte bufferSize) {
-  for (byte i = 0; i < bufferSize; i++) {
-    M5.Lcd.print(buffer[i] < 0x10 ? " 0" : " ");
-    M5.Lcd.print(buffer[i], HEX);
+  if (porcentajeGas > 100.0) {
+    porcentajeGas = 100.0;
+  } else if (porcentajeGas < 0.0) {
+    porcentajeGas = 0.0;
   }
+
+  M5.Lcd.print("Nivel gas: ");
+  M5.Lcd.println(porcentajeGas);
 }

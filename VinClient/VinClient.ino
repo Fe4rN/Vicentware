@@ -42,9 +42,11 @@ char texto[100]; // UID de la tarjeta
 
 struct {
   double valProx;
+  double trigProx;
   char valTarj[20];
   double valLum;
   double valGas;
+  bool valRui;
 } carrier;
 
 //hola burrocódigo
@@ -70,7 +72,6 @@ void setup() {
   M5.Lcd.setTextSize(2);
   M5.Lcd.setCursor(0, 0);
 
-
   M5.Lcd.println("Setup Finalizado");
   delay(2000);
 }
@@ -81,6 +82,7 @@ void loop() {
   analizarLuminosidad();
   analizarGas();
   comprobarRuido();
+  enviarDato();
   delay(1000);
 }
 
@@ -98,11 +100,6 @@ void analizarDistancia(){
   // Calcular la distancia en cm
   sensorProximidad.distance = sensorProximidad.duration * 0.034 / 2;
 
-  // Mostrar la distancia en el monitor serial y en la pantalla del M5Stack
-  Serial.print("Distance: ");
-  Serial.print(sensorProximidad.distance);
-  Serial.println(" cm");
-
   // Mostrar en pantalla
   M5.Lcd.clear();
   M5.Lcd.setCursor(0, 0);
@@ -114,10 +111,14 @@ void analizarDistancia(){
   if (abs(sensorProximidad.distance - sensorProximidad.previousDistance) > sensorProximidad.threshold) {
     M5.Lcd.setCursor(0, 20);
     M5.Lcd.println("Movimiento detectado!");
+    carrier.trigProx = true;
+  } else {
+    carrier.trigProx = false;
   }
 
   // Actualizar la distancia anterior
   sensorProximidad.previousDistance = sensorProximidad.distance;
+  carrier.valProx = sensorProximidad.distance;
 }
 
 void analizarTarjeta() {
@@ -137,9 +138,12 @@ void analizarTarjeta() {
       }
 
       M5.Lcd.println(uidString);
-
+      strncpy(carrier.valTarj, uidString + 5, sizeof(carrier.valTarj) - 1); // Copy without "UID: "
+      carrier.valTarj[sizeof(carrier.valTarj) - 1] = '\0'; // Ensure null termination
       mfrc522.PICC_HaltA();
     }
+  } else {  // No card detected
+    carrier.valTarj[0] = '\0'; // Set valTarj to an empty string
   }
 }
 
@@ -150,6 +154,7 @@ void analizarLuminosidad() {
   M5.Lcd.print("Luminosidad: ");
   M5.Lcd.print(lightPercentage);
   M5.Lcd.println("%");
+  carrier.valLum = lightPercentage;
 }
 
 void analizarGas() {
@@ -166,11 +171,38 @@ void analizarGas() {
 
   M5.Lcd.print("Nivel gas: ");
   M5.Lcd.println(porcentajeGas);
+  carrier.valGas = porcentajeGas;
 }
 
 void comprobarRuido(){
   if (soundDetected) {  // Check if interrupt was triggered
     soundDetected = false;  // Reset the flag
     M5.Lcd.print("Ruido detectado");
+    carrier.valRui = true;
   }
+}
+
+void enviarDato() {
+  Serial.println("Datos del struct carrier:");
+
+  // Print the Proximity sensor value
+  Serial.print("Proximidad: ");
+  Serial.println(carrier.valProx);
+  if(carrier.trigProx == true){
+    Serial.print("Movimiento detectado");
+  } 
+
+  // Print the Card UID value
+  Serial.print("Tarjeta UID: ");
+  Serial.println(carrier.valTarj);
+
+  // Print the Luminosity value
+  Serial.print("Luminosidad: ");
+  Serial.println(carrier.valLum);
+
+  // Print the Gas sensor value
+  Serial.print("Nivel de Gas: ");
+  Serial.println(carrier.valGas);
+
+  Serial.println("--------------------------");
 }

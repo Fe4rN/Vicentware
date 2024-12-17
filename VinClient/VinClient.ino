@@ -19,10 +19,14 @@
 #define V1 1.5 // Tensión de referencia medida
 #define gasMax 0.005
 
-// Declaración de credenciales WiFi
-#define SSID "UDPserver"
-#define PASSWORD "12345678"
-bool isNotConnected = true; //Variable guardián
+//Declaración del sensor de sonido
+#define SOUND_PIN 2
+#define SOUND_THRESHOLD 500  // Adjust this threshold based on your sensor
+volatile bool soundDetected = false;  // Flag to detect clap
+
+void IRAM_ATTR onSoundInterrupt() {
+  soundDetected = true;  // Set the flag when the interrupt triggers
+}
 
 // Estructura para almacenar los datos y ajustes del sensor de distancia
 struct {
@@ -38,10 +42,10 @@ char texto[100]; // UID de la tarjeta
 
 struct {
   double valProx;
-  array[] valTarj;
+  char valTarj[20];
   double valLum;
   double valGas;
-} carrier
+} carrier;
 
 //hola burrocódigo
 
@@ -60,23 +64,15 @@ void setup() {
   void printArray(byte* buffer, byte bufferSize); 
 
   pinMode(LUM_PIN, INPUT);
-
+  pinMode(SOUND_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(SOUND_PIN), onSoundInterrupt, RISING);
   // Iniciar pantalla del M5Stack (opcional para visualización)
   M5.Lcd.setTextSize(2);
   M5.Lcd.setCursor(0, 0);
 
-  // Inicialización y conexión WiFi
-  // WiFi.mode(WIFI_STA);
-  // while (isNotConnected) {
-  //   WiFi.begin(SSID, PASSWORD);
-  //   if (WiFi.waitForConnectResult() != WL_CONNECTED) {
-  //     M5.Lcd.println("Error al conectar a la WiFi");
-  //     M5.Lcd.println("Reintentando...");
-  //   } else { isNotConnected = false; }
-  // }
-  // Serial.println("Conexión WiFi establecida");
+
+  M5.Lcd.println("Setup Finalizado");
   delay(2000);
-  Serial.println(F("Setup Finalizado"));
 }
 
 void loop() {
@@ -84,6 +80,7 @@ void loop() {
   analizarTarjeta();
   analizarLuminosidad();
   analizarGas();
+  comprobarRuido();
   delay(1000);
 }
 
@@ -169,4 +166,11 @@ void analizarGas() {
 
   M5.Lcd.print("Nivel gas: ");
   M5.Lcd.println(porcentajeGas);
+}
+
+void comprobarRuido(){
+  if (soundDetected) {  // Check if interrupt was triggered
+    soundDetected = false;  // Reset the flag
+    M5.Lcd.print("Ruido detectado");
+  }
 }

@@ -143,7 +143,8 @@ void analizarTarjeta() {
       mfrc522.PICC_HaltA();
     }
   } else {  // No card detected
-    carrier.valTarj[0] = '\0'; // Set valTarj to an empty string
+    strncpy(carrier.valTarj, "0", sizeof(carrier.valTarj) - 1); // Set valTarj to "0"
+    carrier.valTarj[sizeof(carrier.valTarj) - 1] = '\0'; // Ensure null termination
   }
 }
 
@@ -183,26 +184,12 @@ void comprobarRuido(){
 }
 
 void enviarDato() {
-  Serial.println("Datos del struct carrier:");
-
-  // Print the Proximity sensor value
-  Serial.print("Proximidad: ");
-  Serial.println(carrier.valProx);
-  if(carrier.trigProx == true){
-    Serial.print("Movimiento detectado");
-  } 
-
-  // Print the Card UID value
-  Serial.print("Tarjeta UID: ");
-  Serial.println(carrier.valTarj);
-
-  // Print the Luminosity value
-  Serial.print("Luminosidad: ");
-  Serial.println(carrier.valLum);
-
-  // Print the Gas sensor value
-  Serial.print("Nivel de Gas: ");
-  Serial.println(carrier.valGas);
-
-  Serial.println("--------------------------");
+  // Format data into a structured string
+  String data = "<" + String(carrier.trigProx ? 1 : 0) + "," +
+    String(carrier.valTarj) + "," +
+    String(carrier.valLum) + "," +
+    String(carrier.valGas) + "," +
+    String(carrier.valRui ? 1 : 0) + ">\n";
+  // Send the structured data over serial
+  Serial.print(data);
 }

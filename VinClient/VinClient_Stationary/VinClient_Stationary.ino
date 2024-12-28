@@ -145,6 +145,8 @@ void comprobarRuido() {
     soundDetected = false;  // Reset the flag
     M5.Lcd.print("Ruido detectado");
     carrier.valRui = true;
+  } else {
+    carrier.valRui = false;
   }
 }
 

@@ -19,14 +19,14 @@ dependencies {
 }
 
 application {
-    mainClass = 'com.example.tikhomirov.serial.SerialApp'
+    mainClass = 'com.example.tikhomirov.serial.UdpBroadcastListener'
 }
 
 jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     manifest {
-        attributes 'Main-Class': 'com.example.tikhomirov.serial.SerialApp'
+        attributes 'Main-Class': 'com.example.tikhomirov.serial.UdpBroadcastListener'
     }
 
     from {

@@ -7,6 +7,7 @@ import java.util.Date;
 
 import com.pi4j.Pi4J;
 import com.pi4j.context.Context;
+import com.pi4j.io.exception.IOException;
 import com.pi4j.util.Console;
 
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -25,9 +26,10 @@ public class UdpBroadcastListener implements MqttCallback {
     private MqttClient client;
 
     private final String topic = "VicentPI/edificio1";
+    private final String nfcTopic = "VicentPI/accesos";
     private final int qos = 1;
     private final boolean retain = false;
-    private final String broker = "tcp://broker.mqtt.cool:1883";
+    private final String broker = "tcp://broker.hivemq.com:1883";
     private final String clientId = "vecino1";
 
     public UdpBroadcastListener() throws Exception {
@@ -45,6 +47,9 @@ public class UdpBroadcastListener implements MqttCallback {
         client.connect(connOpts);
 
         console.println("Connected to MQTT broker.");
+
+        client.subscribe(nfcTopic, qos);
+        console.println("Subscribed to NFC topic: " + nfcTopic);
     }
 
     public void startListening() {
@@ -78,6 +83,11 @@ public class UdpBroadcastListener implements MqttCallback {
                         console.println("valGas: " + valGas);
                         console.println("valRui: " + valRui);
 
+                        if (trigProx == 1) {
+                            // Trigger camera capture
+                            takePicture();
+                        }
+
                         // Create the JSON object for MQTT payload
                         JSONObject json = new JSONObject();
                         json.put("fecha", new Date()); // Current timestamp
@@ -106,6 +116,23 @@ public class UdpBroadcastListener implements MqttCallback {
         }
     }
 
+    private void takePicture() {
+        try {
+            // Generate a unique filename using the current timestamp
+            String filename = "/home/pi/pictures/picture_" + System.currentTimeMillis() + ".jpg";
+
+            // Run the shell command to capture the image
+            Process process = Runtime.getRuntime().exec("raspistill -o " + filename);
+            process.waitFor();
+
+            console.println("Picture taken and saved as: " + filename);
+        } catch (IOException | InterruptedException e) {
+            console.println("Error taking picture: " + e.getMessage());
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Override
     public void connectionLost(Throwable throwable) {
         console.println("Conexion con MQTT perdida: " + throwable.getMessage());
@@ -114,6 +141,11 @@ public class UdpBroadcastListener implements MqttCallback {
     @Override
     public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
         console.println("Message arrived from topic: " + s + " - " + mqttMessage.toString());
+
+        if (topic.equals(nfcTopic)) {
+            String nfcUid = mqttMessage.toString();
+            console.println("Received NFC UID: " + nfcUid);
+        }
     }
 
     @Override

@@ -6,68 +6,68 @@ import paho.mqtt.client as mqtt
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# MQTT Configuration
+# Configuración de MQTT
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "VicentPI/edificio1"
 MQTT_NFC_TOPIC = "VicentPI/accesos"
 MQTT_CLIENT_ID = "vecino1"
-FIREBASE_EDIFICIO = "1"  # Ensure this is a string to concatenate later
+FIREBASE_EDIFICIO = "1"
 
-# Firebase Configuration
+# Credenciales Firebase
 FIREBASE_CREDENTIALS_PATH = "/home/pi/Documents/vicent-porter-intelligent-firebase-adminsdk-arg9c-6dd6c9e5d3.json"
 
-# UDP Configuration
+# Configuración UDP
 UDP_PORT = 1234
 BUFFER_SIZE = 1024
 
-# Time to store data before sending the average (in seconds)
+# Variables para controlar intervalos de envio de datos
 AVERAGE_SEND_INTERVAL = 60
-MQTT_SEND_INTERVAL = 5  # MQTT send interval in seconds
+MQTT_SEND_INTERVAL = 5 
 
 def setup_firebase():
-    """Initializes Firebase Admin SDK."""
+    """Inicializa Firebase SDK"""
     cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
     firebase_admin.initialize_app(cred)
     db = firestore.client()
     return db
 
 def on_connect(client, userdata, flags, rc):
-    """Callback for MQTT connection."""
+    """Callback para conexión MQTT"""
     if rc == 0:
-        print("Connected to MQTT broker.")
+        print("Conectado a Broker MQTT")
         client.subscribe(MQTT_NFC_TOPIC)
-        print(f"Subscribed to NFC topic: {MQTT_NFC_TOPIC}")
+        print(f"Suscrito al tópico: {MQTT_NFC_TOPIC}")
     else:
-        print(f"Failed to connect to MQTT broker, return code: {rc}")
+        print(f"Fallo al conectar al Broker MQTT, código de error: {rc}")
 
 def on_message(client, userdata, msg):
-    """Callback for MQTT messages."""
-    print(f"Message arrived from topic {msg.topic}: {msg.payload.decode()}")
+    """Callback para mensajes MQTT"""
+    print(f"Mensaje desde el tópico {msg.topic}: {msg.payload.decode()}")
     if msg.topic == MQTT_NFC_TOPIC:
         nfc_uid = msg.payload.decode()
-        print(f"Received NFC UID: {nfc_uid}")
+        print(f"Recibida la NFC UID: {nfc_uid}")
 
 def start_udp_listener(db, mqtt_client):
-    """Starts the UDP listener and processes received data."""
+    """Inicializa el escuchador UDP y procesa los datos"""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
         udp_socket.bind(("", UDP_PORT))
-        print(f"Listening for UDP broadcasts on port {UDP_PORT}...")
+        print(f"Escuchando broadcasts UDP por el puerto {UDP_PORT}...")
 
-        # Initialize a list to store sensor readings
+        # Iniciliza una lista para guardar los datos de los sensores
         sensor_data = []
         last_send_time = time.time()
-        last_mqtt_time = time.time()  # Track when MQTT was last sent
+        last_mqtt_time = time.time()
 
         while True:
             data, address = udp_socket.recvfrom(BUFFER_SIZE)
             received_data = data.decode("utf-8").strip()
 
-            print(f"Received data: {received_data} from {address}")
+            print(f"Información recibida: {received_data} desde {address}")
 
             if received_data.startswith("<") and received_data.endswith(">"):
                 try:
-                    # Parse received data
+                    # Decodificación de datos
                     values = received_data[1:-1].split(",")
                     trig_prox = int(values[0])
                     val_lum = float(values[1])
@@ -76,80 +76,80 @@ def start_udp_listener(db, mqtt_client):
 
                     print(f"trigProx: {trig_prox}, valLum: {val_lum}, valGas: {val_gas}, valRui: {val_rui}")
 
-                    # Prepare data for Firebase and MQTT
+                    # Prepara los datos para Firebase y MQTT
                     data_payload = {
                         "fecha": datetime.now().isoformat(),
-                        "temperatura": 19.3,  # Placeholder temperature
+                        "temperatura": 19.3,  # lol
                         "distancia": trig_prox == 1,
                         "gas": f"{val_gas:.2f}%",
                         "luz": f"{val_lum:.2f}%",
                         "ruido": val_rui == 1,
                     }
 
-                    # Check for immediate sending conditions
+                    # Comprueba por condiciones inmediatas
                     if trig_prox == 1 or val_rui == 1:
-                        # Send data immediately via MQTT
+                        # Envio a MQTT
                         mqtt_message = json.dumps(data_payload)
                         mqtt_client.publish(MQTT_TOPIC, mqtt_message)
-                        print("Data published to MQTT immediately.")
+                        print("Datos publicados a MQTT por alerta.")
                     
-                    # Store data for averaging later
+                    # Guarda los datos para hacer el promedio posteriormente
                     sensor_data.append(data_payload)
 
-                    # Check if it's time to send the average to Firebase
+                    # Comprueba si es hora de mandar los datos a Firebase
                     current_time = time.time()
                     if current_time - last_send_time >= AVERAGE_SEND_INTERVAL:
                         if sensor_data:
                             average_payload = calculate_average(sensor_data)
-                            # Upload average data to Firebase
+                            # Envia promedio a Firebase
                             db.collection("edificios/" + FIREBASE_EDIFICIO + "/actividad-reciente").add(average_payload)
-                            print("Average data uploaded to Firebase.")
-                        # Reset the sensor data and update the last send time
+                            print("Promedio subido a Firebase.")
+                        # Resetea los datos de los sensores y reestablece el tiempo
                         sensor_data.clear()
                         last_send_time = current_time
 
-                    # Check if it's time to send MQTT data
+                    # Comprueba si es hora de enviar los datos a MQTT
                     if current_time - last_mqtt_time >= MQTT_SEND_INTERVAL:
-                        # Publish the most recent data to MQTT every 5 seconds
+                        # Publicar los datos mas recientes a MQTT
                         mqtt_message = json.dumps(data_payload)
                         mqtt_client.publish(MQTT_TOPIC, mqtt_message)
-                        print("Data published to MQTT every 5 seconds.")
-                        last_mqtt_time = current_time  # Update the last MQTT send time
+                        print("Datos publicados a MQTT por periodo.")
+                        last_mqtt_time = current_time
 
                 except (ValueError, IndexError) as e:
-                    print(f"Error parsing data: {e}")
+                    print(f"Error al transformar información: {e}")
             else:
-                print("Invalid data format.")
+                print("Formato de información inválido.")
 
 def calculate_average(sensor_data):
-    """Calculates the average values from the sensor data."""
+    """Calcula el promedio de los datos de los sensores"""
     average_values = {
         "fecha": datetime.now().isoformat(),
         "temperatura": sum(item["temperatura"] for item in sensor_data) / len(sensor_data),
-        "distancia": any(item["distancia"] for item in sensor_data),  # True if any proximity is triggered
+        "distancia": any(item["distancia"] for item in sensor_data),  # True si se ha activado el sensor
         "gas": f"{sum(float(item['gas'].strip('%')) for item in sensor_data) / len(sensor_data):.2f}%",
         "luz": f"{sum(float(item['luz'].strip('%')) for item in sensor_data) / len(sensor_data):.2f}%",
-        "ruido": any(item["ruido"] for item in sensor_data),  # True if any noise is triggered
+        "ruido": any(item["ruido"] for item in sensor_data),  # True si se ha activado el sensor
     }
     return average_values
 
 def main():
-    # Initialize Firebase
+    # Inicializa Firebase
     db = setup_firebase()
-    print("Firebase initialized.")
+    print("Firebase inicializado.")
 
-    # Initialize MQTT
-    mqtt_client = mqtt.Client(MQTT_CLIENT_ID)  # Adjusted here
+    # Inicializa MQTT
+    mqtt_client = mqtt.Client(MQTT_CLIENT_ID)
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_start()
 
-    # Start UDP Listener
+    # Inicia escuchador UDP
     try:
         start_udp_listener(db, mqtt_client)
     except KeyboardInterrupt:
-        print("Shutting down...")
+        print("Apagando...")
     finally:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()

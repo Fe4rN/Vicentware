@@ -1,107 +1,127 @@
-#include <M5Stack.h>
-#include <SPI.h>
-#include <MFRC522.h>
+#include <Wire.h>
+#include <SPI.h>         //Librería para comunicación SPI
+#include <UNIT_PN532.h>  //Librería Modificada
 #include <WiFi.h>
-#include <AsyncUDP.h>
+#include <PubSubClient.h>
+
+// Conexiones SPI del ESP32
+#define PN532_SCK 18
+#define PN532_MOSI 23
+#define PN532_SS 5
+#define PN532_MISO 19
 
 #define SSID "Samsung S21 de Fedor"
-#define UDPPASS "12345678"
-bool isConnected;
-AsyncUDP udp;
+#define PASS "12345678"
+#define MQTT_SERVER "broker.hivemq.com"
+#define MQTT_TOPIC "Vicent/accesos"  // Topic where the UID will be published
 
-// Pines del MFRC522
-#define RST_PIN 22 // Pin RST
-#define SS_PIN 21 //Pin SDA
+uint8_t DatoRecibido[4];   // Para almacenar los datos
+UNIT_PN532 nfc(PN532_SS);  // Línea enfocada para la comunicación por SPI
 
-MFRC522 mfrc522(SS_PIN, RST_PIN);  // Crear instancia del MFRC522
-int tarjeta_detectada; // Variable para almacenar el ID de la tarjeta
-char texto[100]; // UID de la tarjeta
-
-//hola burrocódigo 2
+bool isConnected = false;
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 void setup() {
-  M5.begin();
-  M5.Lcd.begin();
-  Serial.begin(115200);
-  SPI.begin();
-  mfrc522.PCD_Init();
+  Serial.begin(115200);  // Inicio de puerto Serial a 115200 baudios
+  nfc.begin();           // Comienza la comunicación del PN532
 
-  // Crear la instancia del lector de RFIDs
-  MFRC522 mfrc522(SS_PIN, RST_PIN);
-  void printArray(byte* buffer, byte bufferSize); 
+  conectarWiFi();
+  client.setServer(MQTT_SERVER, 1883);
 
-  M5.Lcd.setTextSize(2);
-  M5.Lcd.setCursor(0, 0);
+  uint32_t versiondata = nfc.getFirmwareVersion();  // Obtiene información de la placa
 
-  M5.Lcd.println("Setup Finalizado");
-  delay(2000);
+  if (!versiondata) {  // Si no se encuentra comunicación con la placa --->
+    Serial.print("No se encontró la placa PN53x");
+    while (1)
+      ;  // Detener
+  }
+  Serial.print("Chip encontrado PN5");
+  Serial.println((versiondata >> 24) & 0xFF, HEX);  // Imprime en el serial que versión de Chip es el lector
+  Serial.print("Firmware ver. ");
+  Serial.print((versiondata >> 16) & 0xFF, DEC);  // Imprime que versión de firmware tiene la placa
+  Serial.print('.');
+  Serial.println((versiondata >> 8) & 0xFF, DEC);
+
+  nfc.setPassiveActivationRetries(0xFF);  // Establece el número máximo de reintentos
+
+  nfc.SAMConfig();  // Configura la placa para realizar la lectura
+
+  Serial.println("Esperando una tarjeta ISO14443A ...");
 }
 
 void loop() {
-  analizarTarjeta();
-  enviarDatoUDP();
-  delay(1000);
-}
+  if (!client.connected()) {
+    reconnectMQTT();
+  }
+  client.loop(); // Mantener conexión activa
 
-void analizarTarjeta() {
-  tarjeta_detectada = mfrc522.PICC_IsNewCardPresent();
-  if (tarjeta_detectada) {
-    if (mfrc522.PICC_ReadCardSerial()) {
-      char uidString[30] = "UID: "; // Buffer to hold the full UID string
+  boolean LeeTarjeta; 
+  uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
+  uint8_t LongitudUID;
 
-      for (byte i = 0; i < mfrc522.uid.size; i++) {
-        char uidByte[4]; // Buffer to hold each byte as a string
-        sprintf(uidByte, "%02X", mfrc522.uid.uidByte[i]); // Format as 2-digit hex
-        strcat(uidString, uidByte); // Append to the UID string
+  LeeTarjeta = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &LongitudUID);
 
-        if (i < mfrc522.uid.size - 1) {
-          strcat(uidString, " "); // Add a space between bytes
-        }
+  if (LeeTarjeta) {
+    Serial.println("Tarjeta encontrada!");
+    Serial.print("Longitud del UID: ");
+    Serial.print(LongitudUID, DEC);
+    Serial.println(" bytes");
+    Serial.print("Valor del UID: ");
+
+    String uidString = "";
+    for (uint8_t i = 0; i < LongitudUID; i++) {
+      Serial.print(" 0x");
+      Serial.print(uid[i], HEX);
+
+      uidString += String(uid[i], HEX);
+      if (i < LongitudUID - 1) uidString += ":";
+    }
+    Serial.println("");
+
+    // Publicar el UID al broker MQTT
+    if (client.connected()) {
+      if (client.publish(MQTT_TOPIC, uidString.c_str())) {
+        Serial.println("UID publicado exitosamente!");
+        delay(100); // Pequeño retraso para evitar saturar la conexión
+      } else {
+        Serial.println("Error al publicar el UID. Intentando nuevamente...");
       }
-
-      M5.Lcd.println(uidString);
-      strncpy(carrier.valTarj, uidString + 5, sizeof(carrier.valTarj) - 1); // Copy without "UID: "
-      carrier.valTarj[sizeof(carrier.valTarj) - 1] = '\0'; // Ensure null termination
-      mfrc522.PICC_HaltA();
-    }
-  } else {  // No card detected
-    strncpy(carrier.valTarj, "0", sizeof(carrier.valTarj) - 1); // Set valTarj to "0"
-    carrier.valTarj[sizeof(carrier.valTarj) - 1] = '\0'; // Ensure null termination
-  }
-}
-
-void conectarUDP() {
-  WiFi.mode(WIFI_STA);
-  while (!isConnected) {
-    WiFi.begin(SSID, UDPPASS);
-    if (WiFi.waitForConnectResult() != WL_CONNECTED) {
-      Serial.println("Error al conectar a la WiFi");
     } else {
-      Serial.println("Conectado a la WiFi");
-      isConnected = true;
+      Serial.println("Cliente MQTT no conectado. Reconectando...");
+      reconnectMQTT();
     }
-  }
-
-  if (udp.listen(1234)) {
-    Serial.print("UDP Listening on IP: ");
-    Serial.println(WiFi.localIP());
-    udp.onPacket([](AsyncUDPPacket packet) {
-      Serial.write(packet.data(), packet.length());
-      Serial.println();
-    });
+  } else {
+    Serial.println("Se agotó el tiempo de espera de una tarjeta");
   }
 }
 
-void enviarDatoUDP() {
-  // Send only the card data via UDP
-  char texto[sizeof(carrier.valTarj)];
-  strncpy(texto, carrier.valTarj, sizeof(texto) - 1);
-  texto[sizeof(texto) - 1] = '\0'; // Ensure null termination
 
-  // Send the structured data as a UDP packet
-  udp.broadcastTo(texto, 1234);
+void conectarWiFi() {
+  while (!isConnected) {
+    WiFi.begin(SSID, PASS);
 
-  // Output the sent data to the serial monitor for debugging
-  Serial.print("CLIENTE: He enviado por la red lo siguiente: ");
-  Serial.println(texto);
+    while (WiFi.status() != WL_CONNECTED) {
+      Serial.println("Conectando al WiFi...");
+      delay(1000);
+    }
+    Serial.println("Conexión WiFi establecida.");
+    Serial.print("Dirección IP: ");
+    Serial.println(WiFi.localIP());
+    isConnected = true;
+  }
+}
+
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.println("Conectando al servidor MQTT...");
+    if (client.connect("ESP32Client")) {
+      Serial.println("Conectado al servidor MQTT.");
+    } else {
+      Serial.print("Falló la conexión MQTT, rc=");
+      Serial.print(client.state());
+      Serial.println(" Reintentando en 5 segundos...");
+      delay(5000);
+    }
+  }
 }
